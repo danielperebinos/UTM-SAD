@@ -1,0 +1,20 @@
+[project]
+name = "sad"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "eli5>=0.16.0",
+    "fairlearn>=0.13.0",
+    "ipython==8.12.0",
+    "jupyter>=1.1.1",
+    "lime>=0.2.0.1",
+    "matplotlib>=3.10.7",
+    "notebook>=7.5.0",
+    "numpy>=2.3.5",
+    "pandas>=2.3.3",
+    "scikit-learn>=1.7.2",
+    "seaborn>=0.13.2",
+    "shap>=0.49.1",
+    "tensorflow>=2.20.0",
+]
