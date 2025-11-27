@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+  producer:
+    build:
+      context: .
+      dockerfile: ./producer/Dockerfile
+    depends_on:
+      - rabbitmq
+    environment:
+      PYTHONUNBUFFERED: "1"
+      RABBITMQ_HOST: rabbitmq
+      QUEUE_NAME: churn_stream
+      DATA_PATH: /app/data/Churn_Modelling.csv
+      STREAM_DELAY_MIN: "0.5"
+      STREAM_DELAY_MAX: "1.0"
+    volumes:
+      - ./data:/app/data:ro
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: .
+      dockerfile: ./consumer/Dockerfile
+    depends_on:
+      - rabbitmq
+    environment:
+      PYTHONUNBUFFERED: "1"
+      RABBITMQ_HOST: rabbitmq
+      QUEUE_NAME: churn_stream
+    volumes:
+      - ./data:/app/data:ro
+    restart: unless-stopped
