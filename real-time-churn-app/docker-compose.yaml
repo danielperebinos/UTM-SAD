@@ -39,4 +39,22 @@ services:
       QUEUE_NAME: churn_stream
     volumes:
       - ./data:/app/data:ro
+      - shared_logs:/app/logs
     restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: ./dashboard/Dockerfile
+    depends_on:
+      - consumer
+    environment:
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - shared_logs:/app/logs
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+volumes:
+  shared_logs:

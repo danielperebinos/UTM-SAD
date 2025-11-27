@@ -1,6 +1,9 @@
+import csv
 import json
 import os
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Dict, Tuple
 
 import pika
@@ -10,6 +13,9 @@ from river import compose, linear_model, metrics, preprocessing
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "churn_stream")
+LOG_DIR = Path(os.getenv("LOG_DIR", "/app/logs"))
+LOG_CSV = LOG_DIR / "data_log.csv"
+WEIGHTS_JSON = LOG_DIR / "weights.json"
 
 CATEGORICAL_FEATURES = ["Geography", "Gender"]
 NUMERIC_FEATURES = [
@@ -25,13 +31,13 @@ NUMERIC_FEATURES = [
 TARGET_COL = "Exited"
 
 
-def build_model() -> Tuple[compose.Pipeline, linear_model.LogisticRegression, metrics.ROCAUC]:
+def build_model() -> Tuple[compose.Pipeline, linear_model.LogisticRegression, metrics.Accuracy]:
     # Compose transformers so categorical features are one-hot encoded and numeric features are scaled.
     numeric = compose.Select(*NUMERIC_FEATURES) | preprocessing.StandardScaler()
     categorical = compose.Select(*CATEGORICAL_FEATURES) | preprocessing.OneHotEncoder()
     log_reg = linear_model.LogisticRegression()
     model = compose.TransformerUnion(numeric, categorical) | log_reg
-    return model, log_reg, metrics.ROCAUC()
+    return model, log_reg, metrics.Accuracy()
 
 
 def connect_rabbitmq() -> Tuple[pika.BlockingConnection, pika.adapters.blocking_connection.BlockingChannel]:
@@ -49,6 +55,26 @@ def connect_rabbitmq() -> Tuple[pika.BlockingConnection, pika.adapters.blocking_
             time.sleep(3)
 
 
+def ensure_log_header() -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if not LOG_CSV.exists():
+        with LOG_CSV.open("w", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "timestamp",
+                    "row_id",
+                    "true_label",
+                    "prediction",
+                    "probability",
+                    "current_accuracy",
+                    "top_feature_name",
+                    "top_feature_weight",
+                ],
+            )
+            writer.writeheader()
+
+
 def explain_weights(weights: Dict[str, float], limit: int = 5) -> str:
     if not weights:
         return "weights not learned yet"
@@ -56,13 +82,44 @@ def explain_weights(weights: Dict[str, float], limit: int = 5) -> str:
     return "; ".join(f"{name}={value:.3f}" for name, value in top_weights)
 
 
+def write_weights_snapshot(weights: Dict[str, float]) -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_path = WEIGHTS_JSON.with_suffix(".tmp")
+    with tmp_path.open("w") as f:
+        json.dump(weights, f)
+    tmp_path.replace(WEIGHTS_JSON)
+
+
+def append_log(row: Dict[str, str]) -> None:
+    ensure_log_header()
+    with LOG_CSV.open("a", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "timestamp",
+                "row_id",
+                "true_label",
+                "prediction",
+                "probability",
+                "current_accuracy",
+                "top_feature_name",
+                "top_feature_weight",
+            ],
+        )
+        writer.writerow(row)
+
+
 def main() -> None:
     model, log_reg, metric = build_model()
     print("[consumer] Model initialized (OneHotEncoder + StandardScaler -> LogisticRegression).")
 
     connection, channel = connect_rabbitmq()
+    ensure_log_header()
+    row_id = 0
 
     def handle_message(ch, method, properties, body) -> None:
+        nonlocal row_id
+        row_id += 1
         try:
             payload = json.loads(body)
             features = payload.get("features", {})
@@ -79,17 +136,35 @@ def main() -> None:
         weights_view = explain_weights(weight_snapshot)
 
         model.learn_one(features, label)
-        metric.update(label, proba_true)
-        try:
-            metric_value = metric.get()
-            metric_str = f"{metric_value:.3f}"
-        except Exception:
-            metric_str = "n/a"
+        metric.update(label, prediction)
+        current_acc = metric.get()
+
+        # Persist metrics and weights for dashboard consumption.
+        append_log(
+            {
+                "timestamp": datetime.utcnow().isoformat(),
+                "row_id": row_id,
+                "true_label": label,
+                "prediction": prediction if prediction is not None else "",
+                "probability": f"{proba_true:.4f}",
+                "current_accuracy": f"{current_acc:.4f}" if current_acc is not None else "",
+                "top_feature_name": weight_snapshot and max(weight_snapshot, key=lambda k: abs(weight_snapshot[k]))
+                or "",
+                "top_feature_weight": weight_snapshot and f"{weight_snapshot[max(weight_snapshot, key=lambda k: abs(weight_snapshot[k]))]:.4f}"
+                or "",
+            }
+        )
+        write_weights_snapshot(weight_snapshot)
 
         print(
-            "[consumer] pred={pred} prob_true={prob:.3f} label={label} "
-            "metric(roc_auc)={metric} | top_weights: {weights}".format(
-                pred=prediction, prob=proba_true, label=label, metric=metric_str, weights=weights_view
+            "[consumer] row_id={row_id} pred={pred} prob_true={prob:.3f} label={label} "
+            "acc={acc} | top_weights: {weights}".format(
+                row_id=row_id,
+                pred=prediction,
+                prob=proba_true,
+                label=label,
+                acc=f"{current_acc:.3f}" if current_acc is not None else "n/a",
+                weights=weights_view,
             )
         )
 
