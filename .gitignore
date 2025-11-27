@@ -1,2 +1,4 @@
 .idea
 .venv
+multi-stream-vision-app/data
+multi-stream-vision-app/shared_data

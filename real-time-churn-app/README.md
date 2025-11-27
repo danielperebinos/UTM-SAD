@@ -12,18 +12,18 @@ Real-time churn detection for banking customers using online (incremental) learn
 ## Architecture
 ```mermaid
 flowchart LR
-    A["CSV Data"] --> B["Producer"]
-    B --> C["RabbitMQ"]
-    C --> D["Consumer (River Model)"]
-    D --> E["Shared Logs (CSV/JSON)"]
-    E --> F["Streamlit Dashboard"]
+    A[CSV Data] --> B[Producer]
+    B --> C[RabbitMQ]
+    C --> D[Consumer (River Model)]
+    D --> E[Shared Logs (CSV/JSON)]
+    E --> F[Streamlit Dashboard]
 ```
 
 ## Key Features
-- Online Learning with River (instance-by-instance updates; no full retrains)
-- Real-Time XAI (live feature weights and per-event insight)
-- Drift Monitoring via continuous accuracy and probability tracking
-- Fully Containerized (Docker Compose for broker, producer, consumer, dashboard)
+- Online learning with River (instance-by-instance updates; no full retrains)
+- Real-time XAI (live feature weights and per-event insight)
+- Drift monitoring via continuous accuracy and probability tracking
+- Fully containerized (Docker Compose for broker, producer, consumer, dashboard)
 
 ## Tech Stack
 - Python 3.11, River, pandas, numpy
@@ -37,6 +37,7 @@ Prerequisites: Docker and Docker Compose.
 
 1) Start the stack:
 ```bash
+cd real-time-churn-app
 docker compose up --build
 ```
 
@@ -49,21 +50,21 @@ Data source: `data/Churn_Modelling.csv` (mounted read-only into the producer).
 ## Project Structure
 ```
 real-time-churn-app/
-├── consumer/
-│   ├── Dockerfile
-│   └── main.py
-├── producer/
-│   ├── Dockerfile
-│   └── main.py
-├── dashboard/
-│   ├── Dockerfile
-│   └── main.py
-├── data/
-│   └── Churn_Modelling.csv
-├── docker-compose.yaml
-├── requirements.txt
-└── README.md
++-- consumer/
+�   +-- Dockerfile
+�   +-- main.py
++-- producer/
+�   +-- Dockerfile
+�   +-- main.py
++-- dashboard/
+�   +-- Dockerfile
+�   +-- main.py
++-- data/
+�   +-- Churn_Modelling.csv
++-- docker-compose.yaml
++-- requirements.txt
++-- README.md
 ```
 
-## 📸 Dashboard Preview
+## Dashboard Preview
 ![Dashboard Screenshot](assets/dashboard.png)

@@ -1,0 +1,6 @@
+streamlit
+pika
+pillow
+pandas
+numpy
+psycopg2-binary

@@ -1,0 +1,8 @@
+torch
+torchvision
+pika
+numpy
+pillow
+opencv-python-headless
+ultralytics
+psycopg2-binary

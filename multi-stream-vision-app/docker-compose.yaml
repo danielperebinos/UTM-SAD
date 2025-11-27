@@ -1,0 +1,77 @@
+version: "3.9"
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "check_port_connectivity" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  video_ingest:
+    build: ./video_ingest
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      QUEUE_NAME: video_stream
+      STREAM_SOURCES: /app/data/me_and_my_friend.mp4,/app/data/only_me.mp4,/app/data/CDK-SomebodyThatIUsedToKnowbyGotye.mp4,/app/data/camera_71.mp4
+      FPS_LIMIT: ${FPS_LIMIT:-5}
+      YOLO_MODEL: ${YOLO_MODEL:-yolov8n.pt}
+    volumes:
+      - ./data:/app/data
+
+  vision_processor:
+    build: ./vision_processor
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      VIDEO_QUEUE: video_stream
+      FEEDBACK_QUEUE: feedback_queue
+      DATA_DIR: /app/data
+      MODEL_NAME: ${MODEL_NAME:-resnet18}
+      REF_EPOCHS: ${REF_EPOCHS:-2}
+      REF_MAX_PER_CLASS: ${REF_MAX_PER_CLASS:-200}
+      USE_YOLO_FOR_REF: ${USE_YOLO_FOR_REF:-1}
+      REF_YOLO_MODEL: ${REF_YOLO_MODEL:-yolov8n.pt}
+    volumes:
+      - ./shared_data:/app/data
+
+  dashboard:
+    build: ./dashboard
+    depends_on:
+      - vision_processor
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      FEEDBACK_QUEUE: feedback_queue
+      DATA_DIR: /app/data
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/postgres
+    volumes:
+      - ./shared_data:/app/data
+    ports:
+      - "8501:8501"
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  rabbitmq_data:
+  pgdata:
