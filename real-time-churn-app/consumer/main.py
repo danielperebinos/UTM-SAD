@@ -55,23 +55,43 @@ def connect_rabbitmq() -> Tuple[pika.BlockingConnection, pika.adapters.blocking_
             time.sleep(3)
 
 
+LOG_FIELDS = [
+    "timestamp",
+    "row_id",
+    "customer_id",
+    "geography",
+    "gender",
+    "age",
+    "balance",
+    "credit_score",
+    "tenure",
+    "num_products",
+    "is_active_member",
+    "true_label",
+    "prediction",
+    "probability",
+    "current_accuracy",
+    "top_feature_name",
+    "top_feature_weight",
+]
+
+
 def ensure_log_header() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    write_header = False
     if not LOG_CSV.exists():
+        write_header = True
+    else:
+        try:
+            with LOG_CSV.open("r") as f:
+                first_line = f.readline().strip().split(",")
+            if set(first_line) != set(LOG_FIELDS):
+                write_header = True
+        except Exception:
+            write_header = True
+    if write_header:
         with LOG_CSV.open("w", newline="") as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=[
-                    "timestamp",
-                    "row_id",
-                    "true_label",
-                    "prediction",
-                    "probability",
-                    "current_accuracy",
-                    "top_feature_name",
-                    "top_feature_weight",
-                ],
-            )
+            writer = csv.DictWriter(f, fieldnames=LOG_FIELDS)
             writer.writeheader()
 
 
@@ -93,19 +113,7 @@ def write_weights_snapshot(weights: Dict[str, float]) -> None:
 def append_log(row: Dict[str, str]) -> None:
     ensure_log_header()
     with LOG_CSV.open("a", newline="") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=[
-                "timestamp",
-                "row_id",
-                "true_label",
-                "prediction",
-                "probability",
-                "current_accuracy",
-                "top_feature_name",
-                "top_feature_weight",
-            ],
-        )
+        writer = csv.DictWriter(f, fieldnames=LOG_FIELDS)
         writer.writerow(row)
 
 
@@ -139,19 +147,32 @@ def main() -> None:
         metric.update(label, prediction)
         current_acc = metric.get()
 
-        # Persist metrics and weights for dashboard consumption.
+        # Extract feature fields for richer logging.
+        top_feature = ""
+        top_weight = ""
+        if weight_snapshot:
+            top_feature = max(weight_snapshot, key=lambda k: abs(weight_snapshot[k]))
+            top_weight = f"{weight_snapshot[top_feature]:.4f}"
+
         append_log(
             {
                 "timestamp": datetime.utcnow().isoformat(),
                 "row_id": row_id,
+                "customer_id": features.get("CustomerId", features.get("RowNumber", row_id)),
+                "geography": features.get("Geography", ""),
+                "gender": features.get("Gender", ""),
+                "age": features.get("Age", ""),
+                "balance": features.get("Balance", ""),
+                "credit_score": features.get("CreditScore", ""),
+                "tenure": features.get("Tenure", ""),
+                "num_products": features.get("NumOfProducts", ""),
+                "is_active_member": features.get("IsActiveMember", ""),
                 "true_label": label,
                 "prediction": prediction if prediction is not None else "",
                 "probability": f"{proba_true:.4f}",
                 "current_accuracy": f"{current_acc:.4f}" if current_acc is not None else "",
-                "top_feature_name": weight_snapshot and max(weight_snapshot, key=lambda k: abs(weight_snapshot[k]))
-                or "",
-                "top_feature_weight": weight_snapshot and f"{weight_snapshot[max(weight_snapshot, key=lambda k: abs(weight_snapshot[k]))]:.4f}"
-                or "",
+                "top_feature_name": top_feature,
+                "top_feature_weight": top_weight,
             }
         )
         write_weights_snapshot(weight_snapshot)

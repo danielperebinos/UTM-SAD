@@ -3,3 +3,4 @@ pandas==2.2.2
 river==0.21.1
 numpy==1.26.4
 streamlit==1.38.0
+altair==5.3.0
